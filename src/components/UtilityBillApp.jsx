@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
+  addOneMonthToIsoDate,
+  getDefaultBillPeriodRange,
   clampIsoToRange,
   clampNonNegative,
   formatBillPeriodForBill,
@@ -10,9 +12,9 @@ import {
   formatPHP,
   formatReadingPeriodCompact,
   parseIsoDateInput,
-  parseYearMonthString,
 } from "../lib/billFormat";
 import { exportBillPdf } from "../lib/exportBillPdf";
+import { printUtilityBill } from "../lib/printBill";
 import UtilityBillReceipt from "./UtilityBillReceipt";
 
 function IsoDateInput({ id: idProp, value, onChange, min, max, placeholder }) {
@@ -122,102 +124,13 @@ function CalendarIcon({ className }) {
   );
 }
 
-function YearMonthInput({ id: idProp, value, onChange, placeholder = "YYYY-MM" }) {
-  const autoId = useId();
-  const inputId = idProp ?? autoId;
-  const hiddenRef = useRef(null);
-  const [text, setText] = useState(value ?? "");
-
-  useEffect(() => {
-    setText(value ?? "");
-  }, [value]);
-
-  const commit = useCallback(
-    (raw) => {
-      if (!raw.trim()) {
-        onChange("");
-        setText("");
-        return;
-      }
-      const ym = parseYearMonthString(raw);
-      if (!ym) {
-        setText(value ?? "");
-        return;
-      }
-      onChange(ym);
-      setText(ym);
-    },
-    [onChange, value]
-  );
-
-  const openPicker = () => {
-    const el = hiddenRef.current;
-    if (el && typeof el.showPicker === "function") {
-      try {
-        el.showPicker();
-      } catch {
-        el.click();
-      }
-    } else if (el) {
-      el.click();
-    }
-  };
-
-  return (
-    <div className="flex w-full min-w-0 rounded-md border border-neutral-300 bg-white shadow-sm focus-within:border-neutral-500 focus-within:ring-2 focus-within:ring-neutral-400">
-      <input
-        id={inputId}
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        spellCheck={false}
-        placeholder={placeholder}
-        value={text}
-        aria-label={placeholder}
-        title="Enter month as YYYY-MM"
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => commit(text)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.currentTarget.blur();
-          }
-        }}
-        className="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-neutral-400"
-      />
-      <button
-        type="button"
-        className="flex shrink-0 items-center border-l border-neutral-200 px-2.5 text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800"
-        onClick={openPicker}
-        aria-label="Open month calendar"
-        title="Open month calendar"
-      >
-        <CalendarIcon className="h-4 w-4" />
-      </button>
-      <input
-        ref={hiddenRef}
-        type="month"
-        className="sr-only"
-        tabIndex={-1}
-        value={value || ""}
-        onChange={(e) => {
-          const v = e.target.value;
-          if (!v) {
-            onChange("");
-            setText("");
-            return;
-          }
-          onChange(v);
-          setText(v);
-        }}
-      />
-    </div>
-  );
-}
 
 export default function UtilityBillApp() {
-  const billPeriodInputId = useId();
   const dueDateInputId = useId();
-  const [billPeriod, setBillPeriod] = useState("");
+  const [billPeriodStart, setBillPeriodStart] = useState(
+    () => getDefaultBillPeriodRange().start
+  );
+  const [billPeriodEnd, setBillPeriodEnd] = useState(() => getDefaultBillPeriodRange().end);
   const [reference, setReference] = useState("");
   const [stallNo, setStallNo] = useState("");
   const [businessName, setBusinessName] = useState("");
@@ -233,8 +146,8 @@ export default function UtilityBillApp() {
   const [waterPeriodEnd, setWaterPeriodEnd] = useState("");
   const [waterPrev, setWaterPrev] = useState("");
   const [waterPresent, setWaterPresent] = useState("");
-  const [waterRateLabel, setWaterRateLabel] = useState("");
   const [waterRate, setWaterRate] = useState("");
+  const [waterAmount, setWaterAmount] = useState("");
 
   const [dueDate, setDueDate] = useState("");
 
@@ -244,14 +157,13 @@ export default function UtilityBillApp() {
 
   const waterPrevNum = parseFloat(waterPrev) || 0;
   const waterPresentNum = parseFloat(waterPresent) || 0;
-  const waterRateNum = parseFloat(waterRate) || 0;
 
   const electricConsumption = clampNonNegative(electricPresentNum - electricPrevNum);
   const waterConsumption = clampNonNegative(waterPresentNum - waterPrevNum);
 
   const electricAmount = electricConsumption * electricRateNum;
-  const waterAmount = waterConsumption * waterRateNum;
-  const totalDue = electricAmount + waterAmount;
+  const waterAmountNum = parseFloat(waterAmount) || 0;
+  const totalDue = electricAmount + waterAmountNum;
 
   const electricPeriodLabel = useMemo(
     () => formatReadingPeriodCompact(electricPeriodStart, electricPeriodEnd),
@@ -262,7 +174,10 @@ export default function UtilityBillApp() {
     [waterPeriodStart, waterPeriodEnd]
   );
   const dueDateLabel = useMemo(() => formatDueDateForBill(dueDate), [dueDate]);
-  const billPeriodLabel = useMemo(() => formatBillPeriodForBill(billPeriod), [billPeriod]);
+  const billPeriodLabel = useMemo(
+    () => formatBillPeriodForBill(billPeriodStart, billPeriodEnd),
+    [billPeriodStart, billPeriodEnd]
+  );
 
   const downloadPdf = useCallback(async () => {
     try {
@@ -275,37 +190,41 @@ export default function UtilityBillApp() {
     }
   }, [reference]);
 
+  const printBill = useCallback(async () => {
+    try {
+      await printUtilityBill();
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 text-neutral-900">
-      <header className="mb-8">
+    <div className="bill-page mx-auto max-w-6xl px-4 py-8 text-neutral-900">
+      <header className="no-print mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Utility bill</h1>
         <p className="mt-1 text-sm text-neutral-600">
-          Fill in the fields. Consumption and amounts update automatically. Download a PDF when you are
-          done.
+          Fill in the fields. Electric consumption and amount are calculated automatically; water values
+          are entered manually. Print or download a PDF when you are done.
         </p>
       </header>
 
-      <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <section className="space-y-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+      <div className="bill-page-grid grid gap-10 lg:grid-cols-[minmax(0,1fr)_420px]">
+        <section className="no-print space-y-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Bill details</h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1">
-              <label htmlFor={billPeriodInputId} className="text-xs font-medium text-neutral-600">
-                Bill period
-              </label>
-              <YearMonthInput
-                id={billPeriodInputId}
-                value={billPeriod}
-                onChange={setBillPeriod}
-                placeholder="YYYY-MM"
-              />
-              <p className="text-[11px] text-neutral-500">
-                On bill: <span className="font-medium text-neutral-700">{billPeriodLabel}</span>
-              </p>
-            </div>
+            <DateRangeFields
+              label="Bill period"
+              start={billPeriodStart}
+              end={billPeriodEnd}
+              onStartChange={setBillPeriodStart}
+              onEndChange={setBillPeriodEnd}
+              autoEndOneMonth
+              previewLabel={billPeriodLabel}
+              className="sm:col-span-2"
+            />
             <Field label="Utility bill no." value={reference} onChange={setReference} />
             <Field label="Stall no." value={stallNo} onChange={setStallNo} />
-            <Field label="Business name" value={businessName} onChange={setBusinessName} />
+            <Field label="Business name" className="sm:col-span-2" value={businessName} onChange={setBusinessName} />
             <Field label="Owner" className="sm:col-span-2" value={owner} onChange={setOwner} />
           </div>
 
@@ -338,19 +257,14 @@ export default function UtilityBillApp() {
               onEndChange={setWaterPeriodEnd}
               className="sm:col-span-2"
             />
-            <Field
-              label="Rate label (shown on bill)"
-              value={waterRateLabel}
-              onChange={setWaterRateLabel}
-              placeholder='e.g. 31&up m³'
-            />
-            <Field label="Rate (per m³)" value={waterRate} onChange={setWaterRate} inputMode="decimal" />
+            <Field label="Rate" value={waterRate} onChange={setWaterRate} inputMode="decimal" />
             <Field label="Previous (m³)" value={waterPrev} onChange={setWaterPrev} inputMode="decimal" />
             <Field label="Present (m³)" value={waterPresent} onChange={setWaterPresent} inputMode="decimal" />
+            <Field label="Amount" value={waterAmount} onChange={setWaterAmount} inputMode="decimal" />
           </div>
           <p className="text-sm text-neutral-600">
-            Consumption: <strong>{formatCount(waterConsumption)} m³</strong> · Amount:{" "}
-            <strong>{formatPHP(waterAmount)}</strong>
+            On bill consumption: <strong>{formatCount(waterConsumption)} m³</strong> (from previous and
+            present) · Amount: <strong>{formatPHP(waterAmountNum)}</strong>
           </p>
 
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Payment</h2>
@@ -369,17 +283,26 @@ export default function UtilityBillApp() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={downloadPdf}
-            className="rounded-md bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-neutral-800"
-          >
-            Download PDF
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={downloadPdf}
+              className="rounded-md bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-neutral-800"
+            >
+              Download PDF
+            </button>
+            <button
+              type="button"
+              onClick={printBill}
+              className="rounded-md border border-neutral-300 bg-white px-4 py-2.5 text-sm font-medium text-neutral-900 shadow-sm hover:bg-neutral-50"
+            >
+              Print
+            </button>
+          </div>
         </section>
 
-        <div className="lg:sticky lg:top-8 lg:self-start">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">Preview</p>
+        <div className="print-receipt-host lg:sticky lg:top-8 lg:self-start overflow-x-auto">
+          <p className="no-print mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">Preview</p>
           <UtilityBillReceipt
             billPeriodLabel={billPeriodLabel}
             reference={reference}
@@ -396,8 +319,8 @@ export default function UtilityBillApp() {
             waterPrev={waterPrev}
             waterPresent={waterPresent}
             waterConsumption={waterConsumption}
-            waterRateLabel={waterRateLabel}
-            waterAmount={waterAmount}
+            waterRate={waterRate}
+            waterAmount={waterAmountNum}
             totalDue={totalDue}
             dueDateLabel={dueDateLabel}
           />
@@ -431,9 +354,12 @@ function DateRangeFields({
   className = "",
   startPlaceholder = "YYYY-MM-DD",
   endPlaceholder = "YYYY-MM-DD",
+  autoEndOneMonth = false,
+  previewLabel,
 }) {
   const startId = useId();
   const endId = useId();
+  const billPreview = previewLabel ?? formatReadingPeriodCompact(start, end);
 
   return (
     <fieldset className={`flex flex-col gap-2 ${className}`}>
@@ -448,7 +374,11 @@ function DateRangeFields({
             value={start}
             onChange={(v) => {
               onStartChange(v);
-              if (end && v && end < v) onEndChange(v);
+              if (autoEndOneMonth && v) {
+                onEndChange(addOneMonthToIsoDate(v));
+              } else if (end && v && end < v) {
+                onEndChange(v);
+              }
             }}
             max={end || undefined}
             placeholder={startPlaceholder}
@@ -471,7 +401,7 @@ function DateRangeFields({
         </div>
       </div>
       <p className="text-[11px] text-neutral-500">
-        On bill: <span className="font-medium text-neutral-700">{formatReadingPeriodCompact(start, end)}</span>
+        On bill: <span className="font-medium text-neutral-700">{billPreview}</span>
       </p>
     </fieldset>
   );

@@ -7,7 +7,7 @@ import { formatCount, formatPHP } from '../lib/billFormat';
 export const RECEIPT_WIDTH_PX = 400;
 
 const receiptRoot = {
-  width: '100%',
+  width: RECEIPT_WIDTH_PX,
   maxWidth: RECEIPT_WIDTH_PX,
   margin: '0 auto',
   border: '2px solid #000000',
@@ -102,7 +102,7 @@ export default function UtilityBillReceipt({
   waterPrev,
   waterPresent,
   waterConsumption,
-  waterRateLabel,
+  waterRate,
   waterAmount,
   totalDue,
   dueDateLabel,
@@ -140,7 +140,7 @@ export default function UtilityBillReceipt({
           { label: "Previous Reading", value: `${formatCount(waterPrev)} m³` },
           { label: "Present Reading", value: `${formatCount(waterPresent)} m³` },
           { label: "Consumption", value: `${formatCount(waterConsumption)} m³` },
-          { label: "Rate", value: waterRateLabel || "\u00a0" },
+          { label: "Rate", value: waterRate || "\u00a0" },
           { label: "Amount due", value: formatPHP(waterAmount), emphasize: true },
         ]}
       />

@@ -42,14 +42,51 @@ export function parseYearMonthString(raw) {
   return `${String(y).padStart(4, "0")}-${String(mo).padStart(2, "0")}`;
 }
 
-export function formatBillPeriodForBill(ym) {
-  const iso = parseYearMonthString(ym);
-  if (!iso) return "—";
-  const monthNum = Number(iso.slice(5, 7));
-  const year = Number(iso.slice(0, 4));
-  const mon = MONTH_SHORT[monthNum - 1];
-  if (!mon || !Number.isFinite(year)) return "—";
-  return `${mon.toUpperCase()}. ${year}`;
+function formatLocalDateAsIso(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function getTodayIsoDate() {
+  return formatLocalDateAsIso(new Date());
+}
+
+/** Default bill period: today through one calendar month later. */
+export function getDefaultBillPeriodRange() {
+  const start = getTodayIsoDate();
+  return { start, end: addOneMonthToIsoDate(start) };
+}
+
+/** Returns ISO date one calendar month after start (same day when possible). */
+export function addOneMonthToIsoDate(startIso) {
+  const start = parseIsoToLocalDate(startIso);
+  if (!start) return "";
+  const y = start.getFullYear();
+  const m = start.getMonth();
+  const d = start.getDate();
+  const targetMonth = m + 1;
+  const targetYear = y + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(targetYear, normalizedMonth + 1, 0).getDate();
+  const day = Math.min(d, lastDay);
+  return formatLocalDateAsIso(new Date(targetYear, normalizedMonth, day));
+}
+
+export function formatBillPeriodForBill(startIso, endIso) {
+  const a = parseIsoToLocalDate(startIso);
+  const b = parseIsoToLocalDate(endIso);
+  const fmt = (d) =>
+    d.toLocaleDateString(DISPLAY_LOCALE, {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  if (a && b) return `${fmt(a)} - ${fmt(b)}`;
+  if (a) return fmt(a);
+  if (b) return fmt(b);
+  return "—";
 }
 
 export function formatPHP(value) {

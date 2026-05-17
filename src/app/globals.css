@@ -17,3 +17,10 @@
   --color-neutral-900: #171717;
   --color-neutral-950: #0a0a0a;
 }
+
+/* Screen-only: hide print iframe if present */
+@media screen {
+  #utility-bill-print-frame {
+    display: none !important;
+  }
+}
